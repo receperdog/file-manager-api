@@ -1,6 +1,8 @@
 package com.demo.filemanager.controller;
 
+import com.demo.filemanager.dto.FileMetaDataDTO;
 import com.demo.filemanager.model.FileMetaData;
+import com.demo.filemanager.model.response.ApiResponse;
 import com.demo.filemanager.service.FileService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -16,6 +18,7 @@ import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
 
 @RestController
 @RequestMapping("/api/files")
@@ -29,25 +32,25 @@ public class FileController {
 
 
     @GetMapping
-    public ResponseEntity<List<FileMetaData>> getAllFiles() {
+    public ResponseEntity<ApiResponse<List<FileMetaDataDTO>>> getAllFiles() {
         List<FileMetaData> files = fileService.getAllFiles();
-        return ResponseEntity.ok(files);
+        List<FileMetaDataDTO> dtos = files.stream()
+                .map(this::convertToFileMetaDataDTO)
+                .collect(Collectors.toList());
+        return ResponseEntity.ok(new ApiResponse<>("All files fetched successfully.", dtos));
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<FileMetaData> getFileById(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<FileMetaDataDTO>> getFileById(@PathVariable Long id) {
         Optional<FileMetaData> file = fileService.getFileById(id);
-        if (file.isPresent()) {
-            return ResponseEntity.ok(file.get());
-        } else {
-            return ResponseEntity.notFound().build();
-        }
+        return file.map(metaData -> ResponseEntity.ok(new ApiResponse<>("File fetched successfully.", convertToFileMetaDataDTO(metaData))))
+                .orElseGet(() -> ResponseEntity.notFound().build());
     }
 
     @PostMapping("/upload")
-    public ResponseEntity<?> uploadFile(@RequestParam("file") MultipartFile file) {
+    public ResponseEntity<ApiResponse<FileMetaDataDTO>> uploadFile(@RequestParam("file") MultipartFile file) {
         if (!isValidFile(file)) {
-            return ResponseEntity.badRequest().body("Invalid file type or size!");
+            return ResponseEntity.badRequest().body(new ApiResponse<>("Invalid file type or size!", null));
         }
 
         String fileName = storeFile(file);
@@ -61,7 +64,8 @@ public class FileController {
         metaData.setFilePath(Paths.get(fileStorageLocation, fileName).toString());
 
         FileMetaData savedFile = fileService.saveFile(metaData);
-        return ResponseEntity.ok(savedFile);
+
+        return ResponseEntity.ok(new ApiResponse<>("File uploaded successfully.", convertToFileMetaDataDTO(savedFile)));
     }
 
     @GetMapping("/download/{id}")
@@ -87,13 +91,13 @@ public class FileController {
     }
 
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> deleteFile(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<String>> deleteFile(@PathVariable Long id) {
         fileService.deleteFile(id);
-        return ResponseEntity.noContent().build();
+        return ResponseEntity.ok(new ApiResponse<>("File deleted successfully.", null));
     }
 
     @PutMapping("/{id}")
-    public ResponseEntity<FileMetaData> updateFile(@PathVariable Long id, @RequestParam("file") MultipartFile file) throws IOException {
+    public ResponseEntity<ApiResponse<FileMetaDataDTO>> updateFile(@PathVariable Long id, @RequestParam("file") MultipartFile file) throws IOException {
         Optional<FileMetaData> existingFileMetaData = fileService.getFileById(id);
 
         if (!existingFileMetaData.isPresent()) {
@@ -101,7 +105,7 @@ public class FileController {
         }
 
         if (!isValidFile(file)) {
-            return ResponseEntity.badRequest().body("Invalid file type or size!");
+            return ResponseEntity.badRequest().body(new ApiResponse<>("Invalid file type or size!", null));
         }
 
         FileMetaData updatedMetaData = existingFileMetaData.get();
@@ -113,7 +117,8 @@ public class FileController {
         Files.copy(file.getInputStream(), targetLocation);
 
         FileMetaData savedMetaData = fileService.saveFile(updatedMetaData);
-        return ResponseEntity.ok(savedMetaData);
+
+        return ResponseEntity.ok(new ApiResponse<>("File updated successfully.", convertToFileMetaDataDTO(savedMetaData)));
     }
 
     private boolean isValidFile(MultipartFile file) {
@@ -140,4 +145,25 @@ public class FileController {
             throw new RuntimeException("Error saving file", ex);
         }
     }
+
+    private FileMetaDataDTO convertToFileMetaDataDTO(FileMetaData metaData) {
+        FileMetaDataDTO dto = new FileMetaDataDTO();
+        dto.setId(metaData.getId());
+        dto.setFileName(metaData.getFileName());
+        dto.setFileType(metaData.getFileType());
+        dto.setFileSize(metaData.getFileSize());
+        dto.setFilePath(metaData.getFilePath());
+        return dto;
+    }
+
+    private FileMetaData convertToEntity(FileMetaDataDTO dto) {
+        FileMetaData metaData = new FileMetaData();
+        metaData.setId(dto.getId());
+        metaData.setFileName(dto.getFileName());
+        metaData.setFileType(dto.getFileType());
+        metaData.setFileSize(dto.getFileSize());
+        metaData.setFilePath(dto.getFilePath());
+        return metaData;
+    }
+
 }
