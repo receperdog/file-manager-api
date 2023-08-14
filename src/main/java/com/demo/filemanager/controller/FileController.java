@@ -92,6 +92,30 @@ public class FileController {
         return ResponseEntity.noContent().build();
     }
 
+    @PutMapping("/{id}")
+    public ResponseEntity<FileMetaData> updateFile(@PathVariable Long id, @RequestParam("file") MultipartFile file) throws IOException {
+        Optional<FileMetaData> existingFileMetaData = fileService.getFileById(id);
+
+        if (!existingFileMetaData.isPresent()) {
+            return ResponseEntity.notFound().build();
+        }
+
+        if (!isValidFile(file)) {
+            return ResponseEntity.badRequest().body("Invalid file type or size!");
+        }
+
+        FileMetaData updatedMetaData = existingFileMetaData.get();
+        updatedMetaData.setFileName(file.getOriginalFilename());
+        updatedMetaData.setFileSize(file.getSize());
+        updatedMetaData.setFileType(file.getContentType());
+
+        Path targetLocation = Paths.get(fileStorageLocation).resolve(file.getOriginalFilename());
+        Files.copy(file.getInputStream(), targetLocation);
+
+        FileMetaData savedMetaData = fileService.saveFile(updatedMetaData);
+        return ResponseEntity.ok(savedMetaData);
+    }
+
     private boolean isValidFile(MultipartFile file) {
         String[] allowedExtensions = { "png", "jpeg", "jpg", "docx", "pdf", "xlsx" };
         String originalFileName = file.getOriginalFilename();
